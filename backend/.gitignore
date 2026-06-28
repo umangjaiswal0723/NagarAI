@@ -1,0 +1,5 @@
+nagarai.db 
+.env 
+__pycache__/ 
+uploads/ 
+rti_pdfs/ 
