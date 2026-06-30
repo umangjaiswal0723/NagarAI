@@ -40,3 +40,16 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+@app.get("/seed-now-once")
+def seed_now_once():
+    from database import SessionLocal, Issue
+    db = SessionLocal()
+    existing = db.query(Issue).count()
+    if existing > 0:
+        db.close()
+        return {"message": f"Already seeded with {existing} issues. Skipping."}
+    db.close()
+    import subprocess
+    result = subprocess.run(["python", "seed_data.py"], capture_output=True, text=True)
+    return {"message": "Seeding complete", "output": result.stdout, "error": result.stderr}
