@@ -3,14 +3,37 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import os
+import subprocess
 
-from database import engine, Base
+from database import engine, Base, SessionLocal, Issue
 from routes import issues, actions, dashboard
 from services.scheduler import start_scheduler
+
+def auto_seed_if_empty():
+    """Runs on every server startup. If the database is empty (fresh deploy,
+    free-tier restart, etc), automatically seeds demo data so the live link
+    always works for anyone who opens it, regardless of when."""
+    db = SessionLocal()
+    try:
+        existing = db.query(Issue).count()
+        if existing == 0:
+            db.close()
+            print("[Startup] Database empty — auto-seeding demo data...")
+            result = subprocess.run(["python", "seed_data.py"], capture_output=True, text=True)
+            print(result.stdout)
+            if result.stderr:
+                print("[Startup] Seed stderr:", result.stderr)
+        else:
+            print(f"[Startup] Database already has {existing} issues — skipping seed.")
+            db.close()
+    except Exception as e:
+        print(f"[Startup] Auto-seed check failed: {e}")
+        db.close()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    auto_seed_if_empty()
     start_scheduler()
     yield
 
@@ -43,13 +66,11 @@ def health():
 
 @app.get("/seed-now-once")
 def seed_now_once():
-    from database import SessionLocal, Issue
     db = SessionLocal()
     existing = db.query(Issue).count()
     if existing > 0:
         db.close()
         return {"message": f"Already seeded with {existing} issues. Skipping."}
     db.close()
-    import subprocess
     result = subprocess.run(["python", "seed_data.py"], capture_output=True, text=True)
     return {"message": "Seeding complete", "output": result.stdout, "error": result.stderr}
