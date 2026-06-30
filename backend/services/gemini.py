@@ -20,7 +20,7 @@ GROQ_MODEL = "llama-3.3-70b-versatile"
 
 
 def _ask(prompt: str) -> str:
-    """Try Gemini first, fall back to Groq if quota exceeded."""
+    """Try Gemini first, fall back to Groq on ANY error (quota, auth, etc)."""
     try:
         response = client.models.generate_content(
             model=GEMINI_MODEL,
@@ -28,19 +28,17 @@ def _ask(prompt: str) -> str:
         )
         return response.text.strip()
     except Exception as e:
-        if "429" in str(e) or "quota" in str(e).lower() or "exhausted" in str(e).lower():
-            # Fallback to Groq
-            response = groq_client.chat.completions.create(
-                model=GROQ_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=1024
-            )
-            return response.choices[0].message.content.strip()
-        raise e
+        print(f"[Gemini failed, falling back to Groq] {e}")
+        response = groq_client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1024
+        )
+        return response.choices[0].message.content.strip()
 
 
 def _ask_json(prompt: str) -> dict:
-    """Try Gemini first, fall back to Groq if quota exceeded."""
+    """Try Gemini first, fall back to Groq on ANY error (quota, auth, etc)."""
     full_prompt = prompt + "\n\nRespond ONLY with valid JSON, no markdown, no explanation."
     try:
         response = client.models.generate_content(
@@ -50,17 +48,15 @@ def _ask_json(prompt: str) -> dict:
         text = response.text.strip().replace("```json", "").replace("```", "").strip()
         return json.loads(text)
     except Exception as e:
-        if "429" in str(e) or "quota" in str(e).lower() or "exhausted" in str(e).lower():
-            # Fallback to Groq
-            response = groq_client.chat.completions.create(
-                model=GROQ_MODEL,
-                messages=[{"role": "user", "content": full_prompt}],
-                max_tokens=1024
-            )
-            text = response.choices[0].message.content.strip()
-            text = text.replace("```json", "").replace("```", "").strip()
-            return json.loads(text)
-        raise e
+        print(f"[Gemini failed, falling back to Groq] {e}")
+        response = groq_client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[{"role": "user", "content": full_prompt}],
+            max_tokens=1024
+        )
+        text = response.choices[0].message.content.strip()
+        text = text.replace("```json", "").replace("```", "").strip()
+        return json.loads(text)
 
 
 def classify_issue(description: str, image_bytes: bytes | None = None) -> dict:
@@ -82,7 +78,8 @@ Return ONLY valid JSON.
             )
             text = response.text.strip().replace("```json", "").replace("```", "").strip()
             return json.loads(text)
-        except Exception:
+        except Exception as e:
+            print(f"[Gemini vision failed, falling back to Groq text-only] {e}")
             return _ask_json(prompt)
     else:
         return _ask_json(prompt)
